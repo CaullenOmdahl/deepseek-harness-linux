@@ -446,6 +446,7 @@ git commit -m "feat: sign and verify release checksums and manifest"
 
 **Files:**
 - Create: `linux/electron-builder.config.mjs` (wrapper config importing the upstream export; adds the Linux formats and branding)
+- Modify: `linux/scripts/apply-patches.mjs` (add a guarded `--series/--target` CLI; keep the module export unchanged)
 - Create: `linux/build/build.sh`
 - Create: `linux/scripts/test-containers.sh`
 - Create: `.github/workflows/build-linux.yml`
@@ -454,9 +455,9 @@ git commit -m "feat: sign and verify release checksums and manifest"
 - Consumes: Task 2 `apply-patches.mjs`, Task 3 `release.mjs`, Task 4 `verify-artifacts.mjs`, Task 5 signing scripts, and the Task 1 spike's build command/artifact path and branding findings.
 - Produces: a GitHub Release `v<version>-linux.<n>` with exactly the assets from Global Constraints, whose packaged window title is `DeepSeek Harness`, whose `.desktop` entry and icon are installed, and whose window class matches the desktop entry.
 
-- [ ] **Step 1: Write the wrapper config and build script**
+- [ ] **Step 1: Write the wrapper config, applier CLI, and build script**
 
-`linux/electron-builder.config.mjs` imports upstream's config factory (the spike doc records the exact module) and extends the Linux side to produce `AppImage`, `deb`, `rpm`, and `pacman` artifacts. The spike proved the upstream packaging command emits AppImage only; choose the mechanism that produces all four (extend the packaging call, or run `electron-builder --config linux/electron-builder.config.mjs` against the prepared tree) and record the exact command in the build script. `linux/build/build.sh` takes `VERSION`, `BUILD_NUMBER`, `DIST_DIR`; runs from the repo root, enters `upstream/`, runs that command with `DSH_DESKTOP_TARGET_PLATFORM=linux DSH_DESKTOP_TARGET_ARCH=x64`, then collects the four outputs into `DIST_DIR` under the exact Global-Constraints names (copy/rename). Nonzero exit on any missing format.
+Add a guarded CLI to `linux/scripts/apply-patches.mjs` so `node linux/scripts/apply-patches.mjs --series linux/patches --target upstream` applies the series (same `applyPatches` export; import must not run the CLI). `linux/electron-builder.config.mjs` imports upstream's config factory (the spike doc records the exact module) and extends the Linux side to produce `AppImage`, `deb`, `rpm`, and `pacman` artifacts. The spike proved the upstream packaging command emits AppImage only; choose the mechanism that produces all four (extend the packaging call, or run `electron-builder --config linux/electron-builder.config.mjs` against the prepared tree) and record the exact command in the build script. `linux/build/build.sh` takes `VERSION`, `BUILD_NUMBER`, `DIST_DIR`; runs from the repo root, enters `upstream/`, runs that command with `DSH_DESKTOP_TARGET_PLATFORM=linux DSH_DESKTOP_TARGET_ARCH=x64`, then collects the four outputs into `DIST_DIR` under the exact Global-Constraints names (copy/rename). Nonzero exit on any missing format.
 
 - [ ] **Step 2: Write the container install script**
 

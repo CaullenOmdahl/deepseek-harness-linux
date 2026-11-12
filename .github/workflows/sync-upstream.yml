@@ -1,0 +1,57 @@
+name: Sync upstream
+
+on:
+  schedule: [{ cron: "*/30 * * * *" }]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+# A scheduled run and a manual dispatch must not race each other.
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - id: latest
+        run: echo "version=$(npm view @deepseek-ai/dsh@latest version)" >> "$GITHUB_OUTPUT"
+      - name: Validate the upstream tag exists
+        env:
+          LATEST: ${{ steps.latest.outputs.version }}
+        run: |
+          git ls-remote --tags https://github.com/deepseek-ai/deepseek-harness.git 'dsh-v*' > /tmp/tags.txt
+          node linux/scripts/resolve-upstream.mjs --latest "$LATEST" --tags-file /tmp/tags.txt
+      - id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          LATEST: ${{ steps.latest.outputs.version }}
+        run: |
+          gh release list --limit 100 --json tagName --jq '.[].tagName' > /tmp/releases.txt
+          node linux/scripts/decide-sync.mjs --latest "$LATEST" --releases-file /tmp/releases.txt >> "$GITHUB_OUTPUT"
+      - name: Dispatch the Linux build
+        if: steps.decide.outputs.action == 'build'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          # `schedule` events carry only `schedule` in the payload, so
+          # `github.event.repository.default_branch` is empty there; the
+          # default branch is `github.ref_name` for scheduled runs.
+          REF: ${{ github.event.repository.default_branch || github.ref_name }}
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: gh workflow run build-linux.yml --ref "$REF" -f version="$VERSION" -f build_number=1
+      - name: Open an issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh issue create --title "Upstream sync failed" \
+            --body "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

@@ -214,6 +214,24 @@ The expected window title is exactly `DeepSeek Harness` and the expected `WM_CLA
 AppImage once on the real Wayland session and confirm `wmctrl -l` (or GNOME's window list) shows
 `DeepSeek Harness`; install `wmctrl` if it is missing (`sudo dnf install -y wmctrl`).
 
+On the Fedora 44 verification host, Electron 44.7.0's native Wayland backend hangs before
+`app.whenReady()` in this remote-desktop session (reproduced with a minimal Electron app, so it is not
+app-specific). The working real-session check therefore forces XWayland and reads the title with
+`xdotool`/`wmctrl`:
+
+```bash
+HOME=$(mktemp -d) ./deepseek-harness-<version>-x86_64.AppImage --appimage-extract-and-run \
+  --no-sandbox --ozone-platform=x11 &
+sleep 15
+DISPLAY=:0 xdotool search --onlyvisible --name '^DeepSeek Harness$' getwindowname %@
+DISPLAY=:0 xdotool search --onlyvisible --class deepseek-harness getwindowgeometry %@
+wmctrl -l | grep 'DeepSeek Harness'
+```
+
+`--ozone-platform=x11` is the documented workaround for users hitting the same Wayland startup hang
+(see `docs/install.md`). Verify that `.desktop` `StartupWMClass=deepseek-harness` still matches the
+running window's `WM_CLASS`.
+
 ## Repository layout
 
 ```

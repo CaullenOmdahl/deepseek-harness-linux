@@ -153,8 +153,11 @@ corresponding upstream checks and reports them, rather than pretending they pass
    overlay's official-client-title selector (`DSH_LINUX_CLIENT_TITLE`), because upstream's
    unsigned/local build profile would otherwise brand the window *DSH Local Build*; the shipped
    window title is **DeepSeek Harness**.
-4. **First release has no in-app updater** (see [Updating and downgrading](#updating-and-downgrading)).
-5. **x86_64 only**, and KDE Plasma is untested in v1.
+4. **Native Wayland startup can hang** in some remote-desktop/virtual-display setups with Electron
+   44.7.0; the app then starts but never shows a window. Use the X11/XWayland backend:
+   `--ozone-platform=x11` (see [`docs/install.md`](docs/install.md#troubleshooting)).
+5. **First release has no in-app updater** (see [Updating and downgrading](#updating-and-downgrading)).
+6. **x86_64 only**, and KDE Plasma is untested in v1.
 
 If any of these affect you, open an issue with the release tag and your distribution version.
 

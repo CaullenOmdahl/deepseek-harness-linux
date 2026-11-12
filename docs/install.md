@@ -180,6 +180,18 @@ Fedora/RHEL).
 `DISPLAY` is set. Force X11 with `--ozone-platform=x11` (and unset `WAYLAND_DISPLAY` if you are
 aiming at a specific X server, for example an Xvfb display).
 
+**Starts but never opens a window on a Wayland session** — Electron 44.7.0's native Wayland backend
+can hang during startup in some remote-desktop/virtual-display setups (it never reaches the app-ready
+state), while its X11/XWayland backend works. Run the AppImage with `--ozone-platform=x11`:
+
+```bash
+./deepseek-harness-0.2.2-rc.1-x86_64.AppImage --ozone-platform=x11
+```
+
+For installed packages, add `--ozone-platform=x11` to the `Exec=` line of the installed
+`/usr/share/applications/deepseek-harness.desktop`. This was reproduced with a minimal Electron
+44.7.0 app, so it is an Electron/environment limitation, not an app-specific one.
+
 **Office files won't convert / the Office skill fails** — expected on Linux; upstream has no Linux
 LibreOfficeKit engine. See the README known limitations.
 

@@ -27,6 +27,48 @@ function describe(value) {
   return JSON.stringify(value) ?? String(value)
 }
 
+function isIsoTimestamp(value) {
+  return (
+    typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) &&
+    !Number.isNaN(Date.parse(value))
+  )
+}
+
+// Release artifacts are flat file names at the top of the release directory.
+// Anything absolute or containing a separator is metadata we refuse to trust.
+function isSafeArtifactName(name) {
+  return (
+    typeof name === 'string' &&
+    name !== '' &&
+    !name.startsWith('/') &&
+    !name.startsWith('\\') &&
+    !/^[A-Za-z]:/.test(name) &&
+    !name.includes('/') &&
+    !name.includes('\\')
+  )
+}
+
+/** Reject sums lines for anything other than the four expected artifact names. */
+function checkSumsEntries(sums, expected, problems) {
+  const expectedNames = new Set(expected.map((asset) => asset.name))
+  for (const name of sums.keys()) {
+    if (!isSafeArtifactName(name)) {
+      problems.push(`${SUMS_NAME} contains an unsafe path: ${describe(name)}`)
+    } else if (!expectedNames.has(name)) {
+      problems.push(`${SUMS_NAME} has an unexpected entry for ${describe(name)}`)
+    }
+  }
+}
+
+/** Reject manifest keys that are not the four `<format>/<arch>` keys. */
+function checkManifestKeys(manifest, expected, problems) {
+  const expectedKeys = new Set(expected.map(({ format, arch }) => `${format}/${arch}`))
+  for (const key of Object.keys(manifest.assets)) {
+    if (!expectedKeys.has(key)) problems.push(`${MANIFEST_NAME} has an unexpected asset key: ${describe(key)}`)
+  }
+}
+
 function readSums(path, problems) {
   let text
   try {
@@ -67,6 +109,12 @@ function readManifest(path, version, problems) {
   if (manifest.version !== version) {
     problems.push(`${MANIFEST_NAME} version is ${describe(manifest.version)}, expected ${describe(version)}`)
   }
+  if (typeof manifest.tag !== 'string' || manifest.tag.trim() === '') {
+    problems.push(`${MANIFEST_NAME} must have a tag string`)
+  }
+  if (typeof manifest.generatedAt !== 'string' || !isIsoTimestamp(manifest.generatedAt)) {
+    problems.push(`${MANIFEST_NAME} must have an ISO generatedAt timestamp`)
+  }
   if (manifest.assets === null || typeof manifest.assets !== 'object' || Array.isArray(manifest.assets)) {
     problems.push(`${MANIFEST_NAME} has no assets object`)
     return null
@@ -83,11 +131,15 @@ export function verifyArtifacts({ dir, version }) {
   if (!version) throw new Error('verifyArtifacts requires a version')
 
   const problems = []
+  const expected = expectedAssets(version)
   const sums = readSums(join(dir, SUMS_NAME), problems)
   const manifest = readManifest(join(dir, MANIFEST_NAME), version, problems)
   const assets = []
 
-  for (const { format, arch, name } of expectedAssets(version)) {
+  if (sums) checkSumsEntries(sums, expected, problems)
+  if (manifest) checkManifestKeys(manifest, expected, problems)
+
+  for (const { format, arch, name } of expected) {
     const key = `${format}/${arch}`
 
     const listed = sums?.get(name)

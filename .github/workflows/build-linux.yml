@@ -1,0 +1,49 @@
+name: Build Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      version: { type: string, required: true }
+      build_number: { type: number, required: true }
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: deepseek-ai/deepseek-harness, ref: "dsh-v${{ inputs.version }}", path: upstream }
+      - uses: pnpm/action-setup@v4
+        with: { version: 11.28.5 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: node linux/scripts/apply-patches.mjs --series linux/patches --target upstream
+      - run: corepack enable && pnpm install --frozen-lockfile
+        working-directory: upstream
+      # rpm (rpmbuild), libarchive-tools (bsdtar, pacman target), and xz are the fpm host tools.
+      - run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools xz-utils fakeroot
+      - run: bash linux/build/build.sh
+        env: { VERSION: "${{ inputs.version }}", BUILD_NUMBER: "${{ inputs.build_number }}", DIST_DIR: dist }
+      - run: node linux/scripts/assemble-release.mjs --dir dist --version "${{ inputs.version }}" --tag "v${{ inputs.version }}-linux.${{ inputs.build_number }}"
+      - run: node linux/scripts/verify-artifacts.mjs --dir dist --version "${{ inputs.version }}"
+      - run: bash linux/scripts/test-containers.sh dist
+      - run: bash linux/scripts/sign-release.sh dist
+        env: { GPG_PRIVATE_KEY: "${{ secrets.GPG_PRIVATE_KEY }}", GPG_KEY_ID: "${{ secrets.GPG_KEY_ID }}" }
+      - run: bash linux/scripts/verify-release.sh dist
+        env: { GPG_PRIVATE_KEY: "${{ secrets.GPG_PRIVATE_KEY }}", GPG_KEY_ID: "${{ secrets.GPG_KEY_ID }}" }
+      - run: |
+          gh release create "v${{ inputs.version }}-linux.${{ inputs.build_number }}" dist/* \
+            --title "DSH Linux ${{ inputs.version }}-linux.${{ inputs.build_number }}" \
+            --notes "Built from upstream dsh-v${{ inputs.version }}."
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+      - if: failure()
+        run: |
+          gh issue create \
+            --title "Linux build failed for v${{ inputs.version }}-linux.${{ inputs.build_number }}" \
+            --body "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }

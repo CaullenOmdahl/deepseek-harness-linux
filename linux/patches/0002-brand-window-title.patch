@@ -1,0 +1,37 @@
+diff --git a/scripts/client-build-environment.ts b/scripts/client-build-environment.ts
+index 6eed371b..189cfe1f 100644
+--- a/scripts/client-build-environment.ts
++++ b/scripts/client-build-environment.ts
+@@ -124,9 +124,13 @@ export function repositoryClientBuildEnvironment(
+   delete inherited.DSH_CLIENT_COMMIT_HASH
+   delete inherited.DSH_CLIENT_GIT_DIRTY
+   delete inherited.DSH_CLIENT_VERSION
++  // Overlay-owned window-title selector for the local Linux release; passed through so
++  // resolveClientBuildEnvironment can add DSH_CLIENT_TITLE to the local profile.
++  const localTitle = environment.DSH_LINUX_CLIENT_TITLE
+   const dirty = repositoryGitDirty(root)
+   return {
+     ...inherited,
++    ...(localTitle === undefined ? {} : { DSH_LINUX_CLIENT_TITLE: localTitle }),
+     DSH_CLIENT_COMMIT_HASH: repositoryCommitHash(root, environment),
+     ...(dirty === true ? { DSH_CLIENT_GIT_DIRTY: 'true' } : {}),
+     DSH_CLIENT_VERSION: repositoryVersion(root),
+@@ -195,6 +199,7 @@ export function resolveClientBuildEnvironment(
+   if (profile === 'official' || profile === 'local') {
+     const commitHash = environment[CLIENT_COMMIT_HASH_VARIABLE]
+     const version = environment[CLIENT_VERSION_VARIABLE]
++    const localTitle = (environment.DSH_LINUX_CLIENT_TITLE ?? '').trim()
+     if (commitHash === undefined) {
+       throw new Error(`${CLIENT_COMMIT_HASH_VARIABLE} is required for the ${profile} client build profile`)
+     }
+@@ -206,6 +211,10 @@ export function resolveClientBuildEnvironment(
+       DSH_CLIENT_VERSION: version,
+       ...(profile === 'official' ? OFFICIAL_CLIENT_BUILD_ENVIRONMENT : {
+         DSH_CLIENT_BUILD_PROFILE: 'local',
++        // The Linux overlay's unsigned release keeps the local packaging profile but still
++        // brands the window and document title. This selector is overlay-owned, so upstream
++        // builds (which never set it) keep the unmodified local branding.
++        ...(localTitle === '' ? {} : { DSH_CLIENT_TITLE: localTitle }),
+         ...(environment.DSH_CLIENT_GIT_DIRTY === 'true' ? { DSH_CLIENT_GIT_DIRTY: 'true' } : {}),
+       }),
+     }

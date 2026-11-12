@@ -450,8 +450,8 @@ git commit -m "feat: sign and verify release checksums and manifest"
 - Create: `.github/workflows/build-linux.yml`
 
 **Interfaces:**
-- Consumes: Task 2 `apply-patches.mjs`, Task 3 `release.mjs`, Task 4 `verify-artifacts.mjs`, Task 5 signing scripts, and the Task 1 spike's build command/artifact path.
-- Produces: a GitHub Release `v<version>-linux.<n>` with exactly the assets from Global Constraints.
+- Consumes: Task 2 `apply-patches.mjs`, Task 3 `release.mjs`, Task 4 `verify-artifacts.mjs`, Task 5 signing scripts, and the Task 1 spike's build command/artifact path and branding findings.
+- Produces: a GitHub Release `v<version>-linux.<n>` with exactly the assets from Global Constraints, whose packaged window title is `DeepSeek Harness`, whose `.desktop` entry and icon are installed, and whose window class matches the desktop entry.
 
 - [ ] **Step 1: Write the build script**
 
@@ -468,7 +468,11 @@ git commit -m "feat: sign and verify release checksums and manifest"
 
 If the spike records a different install path, use that exact path in each command; the three assertions (binary executable, desktop entry present, no unresolved shared libraries) do not change.
 
-- [ ] **Step 3: Write the workflow**
+- [ ] **Step 3: Brand the package and fix the window title**
+
+The spike built the unsigned/local profile and produced the window title `DSH Local Build`, a default Electron icon, and a `StartupWMClass` that does not match the real window classes. In the wrapper config and build script: set the product title to `DeepSeek Harness` (use the official client assets/profile title — `DSH_CLIENT_TITLE=DeepSeek Harness` — or the smallest overlay patch that achieves it without enabling signing or upload), set `executableName` to `deepseek-harness`, install the DeepSeek Harness icon, and set the electron-builder Linux desktop metadata so the installed `.desktop` `Name` and `StartupWMClass` match the packaged window. Then verify: launch the built AppImage under Xvfb (same isolation recipe as the spike) and assert with `xdotool search --name '^DeepSeek Harness$'` that a window exists, and that the extracted `.desktop` file's `Name=DeepSeek Harness`.
+
+- [ ] **Step 4: Write the workflow**
 
 `.github/workflows/build-linux.yml`:
 ```yaml
@@ -516,12 +520,12 @@ jobs:
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
 ```
 
-- [ ] **Step 4: Validate the workflow locally where possible**
+- [ ] **Step 5: Validate the workflow locally where possible**
 
 Run: `bash -n linux/build/build.sh linux/scripts/test-containers.sh linux/scripts/sign-release.sh linux/scripts/verify-release.sh`
 Expected: no syntax errors. After Task 8's one-time setup, run the workflow with `version=0.2.2-rc.1`, `build_number=1` and follow the first failure to its step.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add linux/build linux/scripts/test-containers.sh .github/workflows/build-linux.yml
@@ -632,7 +636,7 @@ git commit -m "feat: scheduled upstream sync with tag validation and failure iss
 
 - [ ] **Step 1: Write the docs**
 
-`README.md`: what this is (unofficial Linux desktop builds), supported distros, install commands per format, verify commands (`sha256sum -c SHA256SUMS`, `gpg --verify`), FUSE fallback, one-line downgrade path, and a pointer to the issue tracker. `docs/install.md`: per-distro commands. `docs/maintainers.md`: how sync/build/publish work, how to fix a failed patch, where secrets live, the release tag scheme. `NOTICE`: upstream MIT, DeepSeek authorship, modifications (overlay + Linux packaging).
+`README.md`: what this is (unofficial Linux desktop builds), supported distros, install commands per format, verify commands (`sha256sum -c SHA256SUMS`, `gpg --verify`), FUSE fallback, one-line downgrade path, a pointer to the issue tracker, and a **known limitations** section carried over from the spike (image attachments can crash on Linux because of the sharp/Electron GLib issue; Office-to-PDF conversion is unavailable until upstream ships a Linux LibreOfficeKit engine; the unsigned build must display the official client title). `docs/install.md`: per-distro commands. `docs/maintainers.md`: how sync/build/publish work, how to fix a failed patch, where secrets live, the release tag scheme. `NOTICE`: upstream MIT, DeepSeek authorship, modifications (overlay + Linux packaging).
 
 - [ ] **Step 2: One-time repo setup**
 

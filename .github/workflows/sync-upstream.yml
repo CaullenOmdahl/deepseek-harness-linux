@@ -36,8 +36,20 @@ jobs:
         run: |
           gh release list --limit 100 --json tagName --jq '.[].tagName' > /tmp/releases.txt
           node linux/scripts/decide-sync.mjs --latest "$LATEST" --releases-file /tmp/releases.txt >> "$GITHUB_OUTPUT"
-      - name: Dispatch the Linux build
+      - name: Check for an in-flight Linux build
+        id: inflight
         if: steps.decide.outputs.action == 'build'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          busy=$(gh run list --workflow build-linux.yml --limit 100 --json status \
+            --jq 'any(.[]; .status == "queued" or .status == "in_progress")')
+          echo "busy=$busy" >> "$GITHUB_OUTPUT"
+      - name: Dispatch the Linux build
+        # A build for the same version may still be running: skip this tick rather
+        # than queue a duplicate that would fail at `gh release create`.
+        if: steps.decide.outputs.action == 'build' && steps.inflight.outputs.busy == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}

@@ -6,8 +6,9 @@
 # Required environment:
 #   VERSION       Upstream product version, e.g. 0.2.2-rc.1. Must match the upstream
 #                 checkout's desktop package version.
-#   BUILD_NUMBER  1-based release build number. Recorded in the log; artifact names
-#                 use VERSION only (the release tag carries the build number).
+#   BUILD_NUMBER  1-based release build number. Release file names use VERSION only,
+#                 but the wrapped electron-builder config maps this number to the
+#                 package iteration/release so a rebuild upgrades the previous one.
 #   DIST_DIR      Output directory for the four renamed release artifacts.
 #
 # Optional environment:
@@ -86,12 +87,13 @@ linux_env=(
   "DSH_DESKTOP_UNSIGNED=1"
   "DSH_DESKTOP_APP_ID=com.deepseek.harness"
   "DSH_LINUX_CLIENT_TITLE=DeepSeek Harness"
+  "BUILD_NUMBER=$BUILD_NUMBER"
 )
 
 formats=(appimage deb rpm pacman)
 patterns=('*-unsigned.AppImage' '*-unsigned.deb' '*-unsigned.rpm' '*-unsigned.pacman')
 
-echo "build: upstream $VERSION, Linux release build $BUILD_NUMBER"
+echo "build: upstream $VERSION, Linux release build $BUILD_NUMBER (package iteration $BUILD_NUMBER)"
 echo "build: pnpm command: ${pnpm_command[*]}"
 
 # Remove outputs from earlier builds so the collection step can require exactly one file.

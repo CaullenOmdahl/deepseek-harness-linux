@@ -6,6 +6,7 @@
 import { readdirSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 
 const USAGE = 'usage: node linux/scripts/apply-patches.mjs --series <dir> --target <dir>'
 
@@ -109,4 +110,6 @@ export function main(argv) {
   }
 }
 
-if (import.meta.main) process.exitCode = main(process.argv.slice(2))
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = main(process.argv.slice(2))
+}

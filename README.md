@@ -28,7 +28,7 @@ containers before it is signed and published.
 - **Not supported:** musl/Alpine, NixOS, Flatpak, 32-bit, and KDE Plasma is untested in v1.
 
 The current release is
-[`v0.2.2-rc.1-linux.1`](https://github.com/CaullenOmdahl/deepseek-harness-linux/releases/tag/v0.2.2-rc.1-linux.1)
+[`v0.2.2-rc.1-linux.2`](https://github.com/CaullenOmdahl/deepseek-harness-linux/releases/tag/v0.2.2-rc.1-linux.2)
 (upstream version `0.2.2-rc.1`). Always install artifacts from the
 [Releases page](https://github.com/CaullenOmdahl/deepseek-harness-linux/releases).
 
@@ -39,7 +39,7 @@ four artifacts and is easiest to use with all of them present):
 
 ```bash
 mkdir -p dsh-linux && cd dsh-linux
-gh release download v0.2.2-rc.1-linux.1 -R CaullenOmdahl/deepseek-harness-linux
+gh release download v0.2.2-rc.1-linux.2 -R CaullenOmdahl/deepseek-harness-linux
 # or download the files manually from the release page
 ```
 
@@ -86,10 +86,10 @@ it; for package installs, run the binary with the flag, or add it to the install
 
 ## Verify the download
 
-Every release ships `SHA256SUMS` (the four artifacts) and `linux-update.json` (machine-readable
-release metadata), each with a detached GPG signature: `SHA256SUMS.asc` and `linux-update.json.asc`.
-The signing key is committed to this repository as
-[`dsh-linux-pubkey.asc`](dsh-linux-pubkey.asc). Its fingerprint is:
+Every release ships nine files: the four packages, `SHA256SUMS`, `linux-update.json`, the detached
+signatures `SHA256SUMS.asc` and `linux-update.json.asc`, and the release signing public key
+`dsh-linux-pubkey.asc`. The key is attached to every release and also committed to this repository
+as [`dsh-linux-pubkey.asc`](dsh-linux-pubkey.asc). Its fingerprint is:
 
 ```
 D1C8 807B 90F7 A51E 7537  FD7F 4B69 2295 FFFB 9452
@@ -98,8 +98,7 @@ D1C8 807B 90F7 A51E 7537  FD7F 4B69 2295 FFFB 9452
 Verify a downloaded release (run from the directory containing all assets):
 
 ```bash
-# 1. Import the release signing key. It is not a release asset: download it from this repository.
-curl -LO https://github.com/CaullenOmdahl/deepseek-harness-linux/raw/master/dsh-linux-pubkey.asc
+# 1. Import the release signing key, downloaded with the rest of the release.
 gpg --import dsh-linux-pubkey.asc
 
 # 2. Check that every artifact matches its SHA-256.
@@ -112,15 +111,15 @@ gpg --verify linux-update.json.asc linux-update.json
 
 Expected: four `OK` lines from `sha256sum`, then `Good signature from "DSH Linux <dsh-linux@invalid>"`
 twice. `gpg` also warns that the key is not certified in *your* keyring; that is expected for a project
-key imported on its own. What matters is the fingerprint and `Good signature`. The release is complete
-only when all four artifacts plus `SHA256SUMS`, `SHA256SUMS.asc`, `linux-update.json`, and
-`linux-update.json.asc` are present.
+key imported on its own. What matters is the fingerprint and `Good signature`. A release is complete
+only when all nine assets, including the public key, are present.
 
 ## Updating and downgrading
 
 There is **no in-app update button in this first release**; it is the next planned milestone. To
-update, download the newer release and install it over the old one with the same command as above
-(the package managers upgrade in place; replace the AppImage file).
+update, download the newer release and install it over the old one with the same command as above.
+The package metadata carries the Linux build number (`-linux.2` is iteration 2 of the same upstream
+version), so package managers upgrade in place; for the AppImage, replace the file.
 
 To go back to a previous release, download that release's artifact and reinstall it:
 
@@ -159,7 +158,9 @@ corresponding upstream checks and reports them, rather than pretending they pass
    44.7.0; the app then starts but never shows a window. Use the X11/XWayland backend:
    `--ozone-platform=x11` (see [`docs/install.md`](docs/install.md#troubleshooting)).
 5. **First release has no in-app updater** (see [Updating and downgrading](#updating-and-downgrading)).
-6. **x86_64 only**, and KDE Plasma is untested in v1.
+6. **The in-app sidebar still reads "DSH Local Build"** in this build; the window title and installed
+   desktop entry are correct, and the Plan 2 update work replaces that residual brand string.
+7. **x86_64 only**, and KDE Plasma is untested in v1.
 
 If any of these affect you, open an issue with the release tag and your distribution version.
 
@@ -170,7 +171,7 @@ If any of these affect you, open an issue with the release tag and your distribu
 - App behaviour, UI, or agent problems that also happen in the official macOS/Windows build:
   <https://github.com/deepseek-ai/deepseek-harness/issues>
 
-Include the release tag (`v0.2.2-rc.1-linux.1`), your distribution and version, `glibc` version, the
+Include the release tag (`v0.2.2-rc.1-linux.2`), your distribution and version, `glibc` version, the
 format you installed, and whether you are on Wayland or X11. Failed builds are filed automatically
 as issues here with the CI run URL.
 
@@ -183,7 +184,7 @@ the release tag scheme, signing keys, and how to repair a failed patch. The shor
 git clone --depth 1 --branch dsh-v0.2.2-rc.1 https://github.com/deepseek-ai/deepseek-harness.git upstream
 corepack enable
 (cd upstream && pnpm install --frozen-lockfile)
-VERSION=0.2.2-rc.1 BUILD_NUMBER=1 DIST_DIR=dist linux/build/build.sh
+VERSION=0.2.2-rc.1 BUILD_NUMBER=2 DIST_DIR=dist linux/build/build.sh
 # artifacts are in dist/; release metadata and signatures are produced by CI
 ```
 

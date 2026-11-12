@@ -17,11 +17,22 @@ export function expectedAssets(version, arch = ARCH) {
   return FORMATS.map((format) => ({ format, arch, name: artifactName(format, version) }))
 }
 
+/** Reject anything that is not the 1-based Linux build number this release publishes. */
+export function assertBuildNumber(buildNumber) {
+  if (!Number.isInteger(buildNumber) || buildNumber < 1) {
+    throw new Error(`build number must be a positive integer, got ${JSON.stringify(buildNumber)}`)
+  }
+  return buildNumber
+}
+
 /**
  * Build the update manifest:
- * `{ version, tag, generatedAt, assets: { '<format>/<arch>': { name, size, sha256 } } }`.
+ * `{ version, tag, buildNumber, generatedAt, assets: { '<format>/<arch>': { name, size, sha256 } } }`.
+ * `buildNumber` is the Linux rebuild counter; Plan 2's updater compares the
+ * `(version, buildNumber)` pair, and package managers order rebuilds by it.
  */
-export function buildManifest({ version, tag, assets }) {
+export function buildManifest({ version, tag, buildNumber, assets }) {
+  assertBuildNumber(buildNumber)
   const map = {}
   for (const asset of assets) {
     map[`${asset.format}/${asset.arch ?? ARCH}`] = {
@@ -30,5 +41,5 @@ export function buildManifest({ version, tag, assets }) {
       sha256: asset.sha256,
     }
   }
-  return { version, tag, generatedAt: new Date().toISOString(), assets: map }
+  return { version, tag, buildNumber, generatedAt: new Date().toISOString(), assets: map }
 }

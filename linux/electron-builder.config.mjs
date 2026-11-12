@@ -12,11 +12,15 @@
 // - `desktopName` in packaged metadata plus `linux.syncDesktopName`, so Electron derives
 //   WM_CLASS `deepseek-harness` and the installed `.desktop` entry gets
 //   `StartupWMClass=deepseek-harness` (verified with `xprop` against the running app);
-// - the fpm metadata (homepage, maintainer) deb/rpm/pacman require.
+// - an overlay package identity: unofficial maintainers, overlay homepage, a valid deb
+//   Section, and a deb copyright file. Upstream authorship stays in LICENSE/NOTICE;
+// - top-level `buildNumber`, which electron-builder maps to the fpm iteration/release,
+//   so a `-linux.2` package upgrades a `-linux.1` package of the same upstream version.
 //
 // The factory derives its output directory from DSH_DESKTOP_* and writes unsigned
 // artifacts, so the build script must run with DSH_DESKTOP_TARGET_PLATFORM=linux,
-// DSH_DESKTOP_TARGET_ARCH=x64, DSH_DESKTOP_UNSIGNED=1, and DSH_DESKTOP_APP_ID set.
+// DSH_DESKTOP_TARGET_ARCH=x64, DSH_DESKTOP_UNSIGNED=1, DSH_DESKTOP_APP_ID set, and a
+// positive BUILD_NUMBER.
 
 import { fileURLToPath } from 'node:url'
 import { createElectronBuilderConfig } from '../upstream/apps/desktop/scripts/electron-builder-config.mjs'
@@ -27,16 +31,31 @@ const ICON_DIRECTORY = fileURLToPath(new URL('./assets/icons', import.meta.url))
 /** Packaged desktop identity Electron uses for WM_CLASS and the installed .desktop filename. */
 const DESKTOP_NAME = 'deepseek-harness.desktop'
 
-/** Source project the release is built from; fpm requires a package URL. */
-const HOMEPAGE = 'https://github.com/deepseek-ai/deepseek-harness'
+/** Overlay project the package points at; npm/deb metadata must not claim upstream support. */
+const HOMEPAGE = 'https://github.com/CaullenOmdahl/deepseek-harness-linux'
 
-/** Upstream package author, used as the fpm maintainer because the manifest has no email. */
-const MAINTAINER = 'Hangzhou DeepSeek Artificial Intelligence Co., Ltd.'
+/** Unofficial packaging identity. `invalid` is the reserved TLD, so this address cannot deliver mail. */
+const MAINTAINER = 'DSH Linux maintainers <dsh-linux@invalid>'
+
+/** Vendor shown by rpm/pacman metadata; the Debian Maintainer field uses MAINTAINER. */
+const VENDOR = 'DSH Linux maintainers'
+
+/** Debian policy copyright file installed by fpm (the deb target does not create one). */
+const DEB_COPYRIGHT = fileURLToPath(new URL('./assets/deb-copyright', import.meta.url))
+
+/** Top-level LICENSE and NOTICE bundled inside every package's resources directory. */
+const LICENSE = fileURLToPath(new URL('../LICENSE', import.meta.url))
+const NOTICE = fileURLToPath(new URL('../NOTICE', import.meta.url))
+
+const buildNumber = process.env.BUILD_NUMBER?.trim() ?? ''
+if (!/^[1-9][0-9]*$/.test(buildNumber)) {
+  throw new Error(`linux packaging: BUILD_NUMBER must be a positive integer, got ${JSON.stringify(process.env.BUILD_NUMBER)}`)
+}
 
 const upstream = createElectronBuilderConfig(process.env)
 
 /** fpm package identity; the product name has a space and is not a valid package name. */
-const fpmOptions = { packageName: 'deepseek-harness', maintainer: MAINTAINER }
+const fpmOptions = { packageName: 'deepseek-harness', maintainer: MAINTAINER, vendor: VENDOR }
 
 // Electron-builder's default fpm dependencies miss libasound and libgbm, which the
 // Electron binary links but which the minimal Debian/Ubuntu/Arch images do not pull in
@@ -59,12 +78,19 @@ const RPM_DEPENDS = [
 
 export default {
   ...upstream,
+  // Maps to the fpm iteration/release and the AppImage version suffix.
+  buildNumber,
   extraMetadata: {
     ...upstream.extraMetadata,
     // Merged into the packaged package.json; Electron reads `desktopName` as its app id.
     desktopName: DESKTOP_NAME,
     homepage: HOMEPAGE,
   },
+  extraResources: [
+    ...(upstream.extraResources ?? []),
+    { from: LICENSE, to: 'LICENSE' },
+    { from: NOTICE, to: 'NOTICE' },
+  ],
   linux: {
     ...upstream.linux,
     category: 'Development',
@@ -73,11 +99,20 @@ export default {
     // Install as /usr/share/applications/deepseek-harness.desktop with the matching WM class.
     syncDesktopName: true,
     maintainer: MAINTAINER,
+    vendor: VENDOR,
     target: ['AppImage', 'deb', 'rpm', 'pacman'],
   },
   // fpm reads packageName from each package target, not from `linux`.
-  deb: { ...upstream.deb, ...fpmOptions, depends: DEB_DEPENDS },
-  rpm: { ...upstream.rpm, ...fpmOptions, depends: RPM_DEPENDS },
+  deb: {
+    ...upstream.deb,
+    ...fpmOptions,
+    // A valid Debian archive section; electron-builder's default is the invalid `default`.
+    packageCategory: 'utils',
+    // fpm supports extra `source=destination` mappings; this ships the policy copyright file.
+    fpm: [`${DEB_COPYRIGHT}=/usr/share/doc/deepseek-harness/copyright`],
+    depends: DEB_DEPENDS,
+  },
+  rpm: { ...upstream.rpm, ...fpmOptions, packageCategory: 'Applications/Productivity', depends: RPM_DEPENDS },
   // Arch packages are zstd-compressed; the release file name is .pkg.tar.zst.
   pacman: { ...upstream.pacman, ...fpmOptions, compression: 'zstd', depends: PACMAN_DEPENDS },
 }

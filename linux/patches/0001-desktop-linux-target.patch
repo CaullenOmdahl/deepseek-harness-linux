@@ -567,3 +567,52 @@ index 3cda38c6..aad3f750 100644
 -    koffi: true, sharp: true, html: true, pty: true, pnpm: true, grep: true, glob: true }))
 +    koffi: true, sharp: process.platform !== 'linux', html: true, pty: true, pnpm: true, grep: true, glob: true }))
  })
+diff --git a/apps/desktop/tests/desktop-build-paths.spec.ts b/apps/desktop/tests/desktop-build-paths.spec.ts
+index f9891ebb..2c295aec 100644
+--- a/apps/desktop/tests/desktop-build-paths.spec.ts
++++ b/apps/desktop/tests/desktop-build-paths.spec.ts
+@@ -79,7 +79,8 @@ describe('desktop build paths', () => {
+     expect(desktopTargetPlatform('mac-arm64')).toEqual({ platform: 'darwin', arch: 'arm64' })
+     expect(desktopTargetPlatform('mac-x64')).toEqual({ platform: 'darwin', arch: 'x64' })
+     expect(desktopTargetPlatform('win-x64')).toEqual({ platform: 'win32', arch: 'x64' })
+-    expect(() => desktopTargetPlatform('linux-x64' as 'mac-x64')).toThrow(/unsupported target/u)
++    expect(desktopTargetPlatform('linux-x64')).toEqual({ platform: 'linux', arch: 'x64' })
++    expect(() => desktopTargetPlatform('linux-arm64' as 'mac-x64')).toThrow(/unsupported target/u)
+   })
+ 
+   it('resolves environment overrides and rejects unsupported targets', () => {
+@@ -88,7 +89,8 @@ describe('desktop build paths', () => {
+       DSH_DESKTOP_TARGET_ARCH: 'x64',
+     }, 'darwin', 'arm64')).toBe('mac-x64')
+     expect(resolveDesktopBuildTarget({}, 'win32', 'x64')).toBe('win-x64')
+-    expect(() => resolveDesktopBuildTarget({}, 'linux', 'x64')).toThrow(/unsupported target/u)
+-    expect(() => desktopTargetBuildPaths('linux-x64' as 'mac-x64')).toThrow(/unsupported target/u)
++    expect(resolveDesktopBuildTarget({}, 'linux', 'x64')).toBe('linux-x64')
++    expect(() => resolveDesktopBuildTarget({}, 'linux', 'arm64')).toThrow(/unsupported target/u)
++    expect(() => desktopTargetBuildPaths('linux-arm64' as 'mac-x64')).toThrow(/unsupported target/u)
+   })
+ })
+diff --git a/apps/desktop/tests/package-target.spec.ts b/apps/desktop/tests/package-target.spec.ts
+index ba647d76..28573987 100644
+--- a/apps/desktop/tests/package-target.spec.ts
++++ b/apps/desktop/tests/package-target.spec.ts
+@@ -19,6 +19,9 @@ describe('desktop package target', () => {
+     expect(resolveDesktopPackageTarget('win-x64', 'win32', 'x64')).toMatchObject({
+       platform: 'win32', arch: 'x64', builderPlatform: '--win', builderArch: '--x64',
+     })
++    expect(resolveDesktopPackageTarget('linux-x64', 'linux', 'x64')).toMatchObject({
++      platform: 'linux', arch: 'x64', builderPlatform: '--linux', builderArch: '--x64',
++    })
+   })
+ 
+   it('allows an Apple Silicon host to build the Intel target through Rosetta', () => {
+@@ -26,7 +29,8 @@ describe('desktop package target', () => {
+   })
+ 
+   it('rejects unsupported targets and hosts before building', () => {
+-    expect(() => resolveDesktopPackageTarget('linux-x64', 'linux', 'x64')).toThrow(/unsupported target/u)
++    expect(() => resolveDesktopPackageTarget('linux-arm64', 'linux', 'x64')).toThrow(/unsupported target/u)
++    expect(() => resolveDesktopPackageTarget('linux-x64', 'win32', 'x64')).toThrow(/Linux build host/u)
+     expect(() => resolveDesktopPackageTarget('win-x64', 'darwin', 'arm64')).toThrow(/Windows x64/u)
+     expect(() => resolveDesktopPackageTarget('mac-arm64', 'darwin', 'x64')).toThrow(/Apple Silicon/u)
+     expect(() => resolveDesktopPackageTarget('mac-arm64', 'linux', 'arm64')).toThrow(/macOS/u)

@@ -3,47 +3,250 @@ name: Build Linux
 on:
   workflow_dispatch:
     inputs:
-      version: { type: string, required: true }
-      build_number: { type: number, required: true }
+      version:
+        description: Upstream product version (for example 0.2.2-rc.1)
+        type: string
+        required: true
+      build_number:
+        description: Linux build number; leave empty to use the next unused number
+        type: number
+        required: false
 
 permissions:
   contents: write
   issues: write
 
+# Builds publish a release tag, so two runs must never overlap. A queued run waits
+# instead of racing a partially uploaded draft.
+concurrency:
+  group: build-linux
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with: { repository: deepseek-ai/deepseek-harness, ref: "dsh-v${{ inputs.version }}", path: upstream }
-      - uses: pnpm/action-setup@v4
-        with: { version: 11.28.5 }
+      - name: Check out the overlay
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out upstream at the requested tag
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: dsh-v${{ inputs.version }}
+          path: upstream
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.28.5
+
       - uses: actions/setup-node@v4
-        with: { node-version: 24 }
-      - run: node linux/scripts/apply-patches.mjs --series linux/patches --target upstream
-      - run: corepack enable && pnpm install --frozen-lockfile
+        with:
+          node-version: 24
+
+      - name: Apply the Linux patch series
+        run: node linux/scripts/apply-patches.mjs --series linux/patches --target upstream
+
+      - name: Install upstream dependencies
+        run: corepack enable && pnpm install --frozen-lockfile
         working-directory: upstream
-      # rpm (rpmbuild), libarchive-tools (bsdtar, pacman target), and xz are the fpm host tools.
-      - run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools xz-utils fakeroot
-      - run: bash linux/build/build.sh
-        env: { VERSION: "${{ inputs.version }}", BUILD_NUMBER: "${{ inputs.build_number }}", DIST_DIR: dist }
-      - run: node linux/scripts/assemble-release.mjs --dir dist --version "${{ inputs.version }}" --tag "v${{ inputs.version }}-linux.${{ inputs.build_number }}"
-      - run: node linux/scripts/verify-artifacts.mjs --dir dist --version "${{ inputs.version }}"
-      - run: bash linux/scripts/test-containers.sh dist
-      - run: bash linux/scripts/sign-release.sh dist
-        env: { GPG_PRIVATE_KEY: "${{ secrets.GPG_PRIVATE_KEY }}", GPG_KEY_ID: "${{ secrets.GPG_KEY_ID }}" }
-      - run: bash linux/scripts/verify-release.sh dist
-        env: { GPG_PRIVATE_KEY: "${{ secrets.GPG_PRIVATE_KEY }}", GPG_KEY_ID: "${{ secrets.GPG_KEY_ID }}" }
-      - run: |
-          gh release create "v${{ inputs.version }}-linux.${{ inputs.build_number }}" dist/* \
-            --title "DSH Linux ${{ inputs.version }}-linux.${{ inputs.build_number }}" \
-            --notes "Built from upstream dsh-v${{ inputs.version }}."
-        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
-      - if: failure()
+
+      # The patch series is the only coupling to upstream source. These gates fail the
+      # build if a patch stops applying, the overlay helpers regress, or Linux packaging
+      # changes break the shared macOS/Windows package scripts.
+      - name: Run overlay unit tests
+        run: node --test 'tests/linux/*.test.mjs'
+
+      - name: Run upstream typecheck and desktop packaging tests
+        working-directory: upstream
         run: |
-          gh issue create \
-            --title "Linux build failed for v${{ inputs.version }}-linux.${{ inputs.build_number }}" \
-            --body "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+          pnpm typecheck
+          pnpm exec vitest run \
+            apps/desktop/tests/desktop-package-environment.spec.ts \
+            apps/desktop/tests/desktop-build-paths.spec.ts \
+            apps/desktop/tests/package-target.spec.ts \
+            apps/desktop/tests/package-target-errors.spec.ts \
+            apps/desktop/tests/package-target-stages.spec.ts
+
+      # rpm (rpmbuild), libarchive-tools (bsdtar, pacman target), xz/zstd are the fpm host
+      # tools; xvfb/xdotool run the AppImage window-title smoke.
+      - name: Install packaging and smoke-test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm libarchive-tools xz-utils zstd fakeroot xvfb xdotool
+
+      - name: Resolve the build number and release tag
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REQUESTED: ${{ inputs.build_number }}
+        run: |
+          gh release list --limit 200 --json tagName --jq '.[].tagName' > "$RUNNER_TEMP/releases.txt"
+          args=(--version "${{ inputs.version }}" --releases-file "$RUNNER_TEMP/releases.txt" --github-output "$GITHUB_OUTPUT")
+          if [[ -n "$REQUESTED" ]]; then args+=(--requested "$REQUESTED"); fi
+          node linux/scripts/resolve-build-number.mjs "${args[@]}"
+
+      - name: Prepare a clean distribution directory
+        run: |
+          # Publish only what this run builds: no stale file may reach the release.
+          rm -rf -- dist
+          mkdir -p dist
+
+      - name: Build the four packages
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ steps.release.outputs.build_number }}
+          DIST_DIR: dist
+        run: bash linux/build/build.sh
+
+      - name: Assemble release metadata
+        run: >-
+          node linux/scripts/assemble-release.mjs
+          --dir dist
+          --version "${{ inputs.version }}"
+          --tag "${{ steps.release.outputs.tag }}"
+          --build-number "${{ steps.release.outputs.build_number }}"
+
+      - name: Verify the four artifacts and the manifest
+        run: >-
+          node linux/scripts/verify-artifacts.mjs
+          --dir dist
+          --version "${{ inputs.version }}"
+          --tag "${{ steps.release.outputs.tag }}"
+          --build-number "${{ steps.release.outputs.build_number }}"
+
+      - name: Verify package identity and build-number ordering
+        run: >-
+          bash linux/scripts/verify-package-identity.sh
+          dist "${{ inputs.version }}" "${{ steps.release.outputs.build_number }}"
+
+      - name: Install-test the packages in clean distro containers
+        run: bash linux/scripts/test-containers.sh dist
+
+      - name: Smoke-test the AppImage window title
+        run: >-
+          bash linux/scripts/smoke-appimage.sh
+          "dist/deepseek-harness-${{ inputs.version }}-x86_64.AppImage"
+
+      - name: Write the verification summary
+        run: |
+          cat > "$RUNNER_TEMP/verification-summary.md" <<'EOF'
+          Verified in CI: exact asset and manifest checks, package identity (unofficial maintainer,
+          overlay homepage, build-number metadata), clean-container installs on Debian 12, Ubuntu 22.04,
+          Fedora 44, openSUSE Tumbleweed, and Arch Linux, the AppImage window-title smoke, and both
+          detached GPG signatures against the committed public key.
+          EOF
+
+      - name: Sign the release metadata
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: bash linux/scripts/sign-release.sh dist
+
+      - name: Verify the signatures against the published key
+        run: bash linux/scripts/verify-release.sh dist
+
+      - name: Attach the public key and assert the exact release file set
+        run: |
+          cp dsh-linux-pubkey.asc dist/
+          node linux/scripts/verify-artifacts.mjs \
+            --dir dist \
+            --version "${{ inputs.version }}" \
+            --tag "${{ steps.release.outputs.tag }}" \
+            --build-number "${{ steps.release.outputs.build_number }}" \
+            --release
+
+      - name: Render release notes
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          summary=()
+          if [[ -f "$RUNNER_TEMP/verification-summary.md" ]]; then
+            summary=(--summary-file "$RUNNER_TEMP/verification-summary.md")
+          fi
+          node linux/scripts/render-release-notes.mjs \
+            --template docs/release-notes.md \
+            --output "$RUNNER_TEMP/release-notes.md" \
+            --version "${{ inputs.version }}" \
+            --tag "${{ steps.release.outputs.tag }}" \
+            --build-number "${{ steps.release.outputs.build_number }}" \
+            --run-url "$RUN_URL" \
+            "${summary[@]}"
+
+      # Publishing is atomic: the release stays an unpublished draft until every asset
+      # is present and the names match the expected set exactly.
+      - name: Create a draft release with all nine assets
+        id: draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          mapfile -t files < <(node --input-type=module -e '
+            const { expectedReleaseFileNames } = await import(process.argv[1])
+            for (const name of expectedReleaseFileNames(process.argv[2])) process.stdout.write(`dist/${name}\n`)
+          ' "$PWD/linux/lib/release-assets.mjs" "${{ inputs.version }}")
+          if [[ "${#files[@]}" -ne 9 ]]; then
+            echo "error: expected nine release files, resolved ${#files[@]}" >&2
+            exit 1
+          fi
+          # Mark the draft before creating it, so a failure mid-upload still deletes
+          # the partial draft instead of leaving a tag that blocks the next dispatch.
+          touch "$RUNNER_TEMP/draft-created"
+          gh release create "$TAG" "${files[@]}" \
+            --draft \
+            --title "DSH Linux ${{ inputs.version }}-linux.${{ steps.release.outputs.build_number }}" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+
+      - name: Assert the uploaded assets, then publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          expected=$(node --input-type=module -e '
+            const { expectedReleaseFileNames } = await import(process.argv[1])
+            process.stdout.write(expectedReleaseFileNames(process.argv[2]).sort().join("\n"))
+          ' "$PWD/linux/lib/release-assets.mjs" "${{ inputs.version }}" | sort)
+          actual=$(gh release view "$TAG" --json assets --jq '.assets[].name' | sort)
+          if [[ "$expected" != "$actual" ]]; then
+            echo "error: uploaded assets differ from the expected release set" >&2
+            diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
+            exit 1
+          fi
+          if [[ "$(gh release view "$TAG" --json isDraft --jq '.isDraft')" != "true" ]]; then
+            echo "error: release $TAG is not a draft before the publish step" >&2
+            exit 1
+          fi
+          gh release edit "$TAG" --draft=false
+          rm -f "$RUNNER_TEMP/draft-created"
+          echo "published $TAG with $(printf '%s\n' "$actual" | wc -l) assets"
+
+      - name: Delete the unpublished draft on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if [[ -f "$RUNNER_TEMP/draft-created" && -n "$TAG" ]]; then
+            # Only an unpublished draft is deleted; a published release is never removed.
+            if [[ "$(gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null || echo false)" == "true" ]]; then
+              gh release delete "$TAG" --yes --cleanup-tag || true
+            fi
+          fi
+
+      - name: Open or update the build failure issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TITLE: Linux build failed for ${{ steps.release.outputs.tag || format('v{0}-linux.unknown', inputs.version) }}
+        run: bash linux/scripts/issue-on-failure.sh "$TITLE" "$RUN_URL"

@@ -1,17 +1,24 @@
 // Pre-publish verification: the four artifacts, `SHA256SUMS`, and
 // `linux-update.json` must agree before anything is signed or published.
 //
-// CLI: node linux/scripts/verify-artifacts.mjs --dir <dir> --version <version>
+// CLI: node linux/scripts/verify-artifacts.mjs --dir <dir> --version <version> \
+//        --tag <tag> --build-number <n> [--release]
+//
+// `--release` additionally requires the directory to hold exactly the nine
+// files a release publishes (four packages, two metadata files, their two
+// signatures, and the public key), so no stray or missing file can be uploaded.
+//
 // Exits 0 when the release is complete and consistent, 1 with one line per
 // problem otherwise, and 2 on usage errors.
 
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseSums, sha256File, SUMS_NAME } from '../lib/checksums.mjs'
-import { expectedAssets, MANIFEST_NAME } from '../lib/manifest.mjs'
+import { assertBuildNumber, expectedAssets, MANIFEST_NAME } from '../lib/manifest.mjs'
+import { expectedReleaseFileNames } from '../lib/release-assets.mjs'
 
-const USAGE = 'usage: node linux/scripts/verify-artifacts.mjs --dir <dir> --version <version>'
+const USAGE = 'usage: node linux/scripts/verify-artifacts.mjs --dir <dir> --version <version> --tag <tag> --build-number <n> [--release]'
 
 /** One or more release problems, each preserved as its own `problems` entry. */
 export class ArtifactError extends Error {
@@ -69,6 +76,37 @@ function checkManifestKeys(manifest, expected, problems) {
   }
 }
 
+/**
+ * Require the directory to hold exactly the files a release publishes.
+ * A directory with a missing, renamed, or extra entry fails verification.
+ */
+function checkReleaseFileSet(dir, version, problems) {
+  let entries
+  try {
+    entries = readdirSync(dir, { withFileTypes: true })
+  } catch (error) {
+    problems.push(`cannot list release directory ${dir}: ${error.message}`)
+    return
+  }
+
+  const actual = new Set()
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      problems.push(`release directory has a non-file entry: ${describe(entry.name)}`)
+      continue
+    }
+    actual.add(entry.name)
+  }
+
+  const expected = new Set(expectedReleaseFileNames(version))
+  for (const name of expected) {
+    if (!actual.has(name)) problems.push(`release directory is missing ${name}`)
+  }
+  for (const name of actual) {
+    if (!expected.has(name)) problems.push(`release directory has an unexpected file: ${describe(name)}`)
+  }
+}
+
 function readSums(path, problems) {
   let text
   try {
@@ -85,7 +123,7 @@ function readSums(path, problems) {
   }
 }
 
-function readManifest(path, version, problems) {
+function readManifest(path, version, tag, buildNumber, problems) {
   let text
   try {
     text = readFileSync(path, 'utf8')
@@ -111,6 +149,13 @@ function readManifest(path, version, problems) {
   }
   if (typeof manifest.tag !== 'string' || manifest.tag.trim() === '') {
     problems.push(`${MANIFEST_NAME} must have a tag string`)
+  } else if (manifest.tag !== tag) {
+    problems.push(`${MANIFEST_NAME} tag is ${describe(manifest.tag)}, expected ${describe(tag)}`)
+  }
+  if (!Number.isInteger(manifest.buildNumber) || manifest.buildNumber < 1) {
+    problems.push(`${MANIFEST_NAME} must have a positive integer buildNumber`)
+  } else if (manifest.buildNumber !== buildNumber) {
+    problems.push(`${MANIFEST_NAME} buildNumber is ${describe(manifest.buildNumber)}, expected ${describe(buildNumber)}`)
   }
   if (typeof manifest.generatedAt !== 'string' || !isIsoTimestamp(manifest.generatedAt)) {
     problems.push(`${MANIFEST_NAME} must have an ISO generatedAt timestamp`)
@@ -125,15 +170,19 @@ function readManifest(path, version, problems) {
 /**
  * Verify that `dir` holds a complete, consistent release for `version`.
  * Returns `{ ok: true, assets }` or throws `ArtifactError` listing every problem.
+ * `release: true` also requires exactly the nine published file names.
  */
-export function verifyArtifacts({ dir, version }) {
+export function verifyArtifacts({ dir, version, tag, buildNumber, release = false }) {
   if (!dir) throw new Error('verifyArtifacts requires a dir')
   if (!version) throw new Error('verifyArtifacts requires a version')
+  if (!tag) throw new Error('verifyArtifacts requires a tag')
+  assertBuildNumber(buildNumber)
 
   const problems = []
   const expected = expectedAssets(version)
+  if (release) checkReleaseFileSet(dir, version, problems)
   const sums = readSums(join(dir, SUMS_NAME), problems)
-  const manifest = readManifest(join(dir, MANIFEST_NAME), version, problems)
+  const manifest = readManifest(join(dir, MANIFEST_NAME), version, tag, buildNumber, problems)
   const assets = []
 
   if (sums) checkSumsEntries(sums, expected, problems)
@@ -182,9 +231,13 @@ export function verifyArtifacts({ dir, version }) {
 }
 
 function parseArgs(argv) {
-  const options = {}
+  const options = { release: false }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
+    if (arg === '--release') {
+      options.release = true
+      continue
+    }
     if (!arg.startsWith('--')) throw new Error(`unexpected argument: ${arg}`)
     const separator = arg.indexOf('=')
     if (separator !== -1) {
@@ -197,7 +250,7 @@ function parseArgs(argv) {
     index += 1
   }
   for (const key of Object.keys(options)) {
-    if (!['dir', 'version'].includes(key)) throw new Error(`unknown option: --${key}`)
+    if (!['dir', 'version', 'tag', 'build-number', 'release'].includes(key)) throw new Error(`unknown option: --${key}`)
   }
   return options
 }
@@ -211,15 +264,16 @@ export function main(argv) {
     return 2
   }
 
-  const { dir, version } = options
-  if (!dir || !version) {
-    console.error(`--dir and --version are required\n${USAGE}`)
+  const { dir, version, tag, release } = options
+  const buildNumber = Number(options['build-number'])
+  if (!dir || !version || !tag || options['build-number'] === undefined) {
+    console.error(`--dir, --version, --tag and --build-number are required\n${USAGE}`)
     return 2
   }
 
   try {
-    const { assets } = verifyArtifacts({ dir, version })
-    console.log(`verified ${assets.length} artifacts for ${version}`)
+    const { assets } = verifyArtifacts({ dir, version, tag, buildNumber, release })
+    console.log(`verified ${assets.length} artifacts for ${tag} (build ${buildNumber})`)
     return 0
   } catch (error) {
     if (error instanceof ArtifactError) {

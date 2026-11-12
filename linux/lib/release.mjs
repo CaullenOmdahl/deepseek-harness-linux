@@ -35,6 +35,44 @@ export function artifactName(format, version) {
   return namer(version)
 }
 
+/**
+ * The package-manager version a format carries for an upstream version,
+ * mirroring electron-builder's Linux version sanitizer: deb/rpm use `~` where
+ * semver has `-`, pacman substitutes `_`, and the AppImage keeps the semver.
+ */
+export function packageVersion(format, version) {
+  switch (format) {
+    case 'appimage':
+      return String(version)
+    case 'deb':
+    case 'rpm':
+      return String(version).replace(/-/g, '~')
+    case 'pacman':
+      return String(version).replace(/-/g, '_')
+    default:
+      throw new Error(`unknown artifact format: ${format}`)
+  }
+}
+
+/** The release iteration/revision one Linux build number maps to. */
+export function packageIteration(buildNumber) {
+  if (!Number.isInteger(buildNumber) || buildNumber < 1) {
+    throw new Error(`build number must be a positive integer, got ${JSON.stringify(buildNumber)}`)
+  }
+  return String(buildNumber)
+}
+
+/**
+ * The version string package managers order rebuilds by: `<sanitized version>-<iteration>`.
+ * For the same upstream version, `-linux.2` therefore outranks `-linux.1`.
+ */
+export function packageRelease(format, version, buildNumber) {
+  if (!['deb', 'rpm', 'pacman'].includes(format)) {
+    throw new Error(`unknown package format: ${format}`)
+  }
+  return `${packageVersion(format, version)}-${packageIteration(buildNumber)}`
+}
+
 /** Decide whether the latest upstream version still needs a Linux release built. */
 export function decideSync({ latestVersion, releaseTags }) {
   const prefix = `v${latestVersion}-linux.`

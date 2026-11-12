@@ -1,15 +1,15 @@
 // Assemble the release metadata: `SHA256SUMS` and `linux-update.json`.
 //
-// CLI: node linux/scripts/assemble-release.mjs --dir <dir> --version <version> --tag <tag>
+// CLI: node linux/scripts/assemble-release.mjs --dir <dir> --version <version> --tag <tag> --build-number <n>
 // The directory must already contain the four artifacts named by `artifactName`.
 
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { formatSums, sha256File, SUMS_NAME } from '../lib/checksums.mjs'
-import { buildManifest, expectedAssets, MANIFEST_NAME } from '../lib/manifest.mjs'
+import { assertBuildNumber, buildManifest, expectedAssets, MANIFEST_NAME } from '../lib/manifest.mjs'
 
-const USAGE = 'usage: node linux/scripts/assemble-release.mjs --dir <dir> --version <version> --tag <tag>'
+const USAGE = 'usage: node linux/scripts/assemble-release.mjs --dir <dir> --version <version> --tag <tag> --build-number <n>'
 
 /** Describe every artifact in `dir` with its size and SHA-256, in canonical order. */
 export function collectAssets({ dir, version }) {
@@ -23,16 +23,18 @@ export function collectAssets({ dir, version }) {
 
 /**
  * Write `SHA256SUMS` and `linux-update.json` for the artifacts in `dir`.
- * Returns the manifest. Throws when any of the four artifacts is missing.
+ * Returns the manifest. Throws when any of the four artifacts is missing or the
+ * build number is not a positive integer.
  */
-export function writeReleaseMetadata({ dir, version, tag }) {
+export function writeReleaseMetadata({ dir, version, tag, buildNumber }) {
   if (!dir) throw new Error('writeReleaseMetadata requires a dir')
   if (!version) throw new Error('writeReleaseMetadata requires a version')
   if (!tag) throw new Error('writeReleaseMetadata requires a tag')
+  assertBuildNumber(buildNumber)
 
   const assets = collectAssets({ dir, version })
   const sums = formatSums(assets)
-  const manifest = buildManifest({ version, tag, assets })
+  const manifest = buildManifest({ version, tag, buildNumber, assets })
 
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, SUMS_NAME), sums)
@@ -56,7 +58,7 @@ function parseArgs(argv) {
     index += 1
   }
   for (const key of Object.keys(options)) {
-    if (!['dir', 'version', 'tag'].includes(key)) throw new Error(`unknown option: --${key}`)
+    if (!['dir', 'version', 'tag', 'build-number'].includes(key)) throw new Error(`unknown option: --${key}`)
   }
   return options
 }
@@ -71,13 +73,14 @@ export function main(argv) {
   }
 
   const { dir, version, tag } = options
-  if (!dir || !version || !tag) {
-    console.error(`--dir, --version and --tag are required\n${USAGE}`)
+  const buildNumber = Number(options['build-number'])
+  if (!dir || !version || !tag || options['build-number'] === undefined) {
+    console.error(`--dir, --version, --tag and --build-number are required\n${USAGE}`)
     return 2
   }
 
   try {
-    const manifest = writeReleaseMetadata({ dir, version, tag })
+    const manifest = writeReleaseMetadata({ dir, version, tag, buildNumber })
     const count = Object.keys(manifest.assets).length
     console.log(`wrote ${SUMS_NAME} and ${MANIFEST_NAME} for ${tag} (${count} assets)`)
     return 0

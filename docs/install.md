@@ -4,7 +4,7 @@ These are unofficial Linux builds. Read the [README known limitations](../README
 before installing: image attachments can crash the app, Office-to-PDF conversion does not work, and
 the builds are unsigned at the OS level (verified with SHA-256 plus GPG signatures instead).
 
-The examples use release `v0.2.2-rc.1-linux.1` (upstream version `0.2.2-rc.1`). Substitute the tag
+The examples use release `v0.2.2-rc.1-linux.2` (upstream version `0.2.2-rc.1`). Substitute the tag
 and file version of the release you are installing.
 
 ## 1. Download
@@ -13,26 +13,27 @@ Download the whole release so checksum verification sees every artifact:
 
 ```bash
 mkdir -p dsh-linux && cd dsh-linux
-gh release download v0.2.2-rc.1-linux.1 -R CaullenOmdahl/deepseek-harness-linux
+gh release download v0.2.2-rc.1-linux.2 -R CaullenOmdahl/deepseek-harness-linux
 ```
 
 Without the GitHub CLI, download the assets from
 <https://github.com/CaullenOmdahl/deepseek-harness-linux/releases> into one directory.
 
-A complete release contains exactly:
+A complete release contains exactly nine files:
 
-- `deepseek-harness-0.2.2-rc.1-x86_64.AppImage`
-- `deepseek-harness_0.2.2-rc.1_amd64.deb`
-- `deepseek-harness-0.2.2-rc.1-1.x86_64.rpm`
-- `deepseek-harness-0.2.2-rc.1-1-x86_64.pkg.tar.zst`
+- the four packages:
+  `deepseek-harness-0.2.2-rc.1-x86_64.AppImage`,
+  `deepseek-harness_0.2.2-rc.1_amd64.deb`,
+  `deepseek-harness-0.2.2-rc.1-1.x86_64.rpm`,
+  `deepseek-harness-0.2.2-rc.1-1-x86_64.pkg.tar.zst`
 - `SHA256SUMS`, `SHA256SUMS.asc`
 - `linux-update.json`, `linux-update.json.asc`
+- `dsh-linux-pubkey.asc`, the release signing public key
 
 ## 2. Verify
 
 ```bash
-# Import the project signing key. It is not a release asset: download it from the repository.
-curl -LO https://github.com/CaullenOmdahl/deepseek-harness-linux/raw/master/dsh-linux-pubkey.asc
+# Import the project signing key that came with the release.
 gpg --import dsh-linux-pubkey.asc
 
 sha256sum -c SHA256SUMS
@@ -126,9 +127,10 @@ desktop file, and icon files are named `deepseek-harness`.
 
 ## 5. Upgrade
 
-Install the newer release with the same command you used originally. Package managers upgrade in
-place; for the AppImage, replace the old file with the new one. There is no in-app updater in this
-first release.
+Install the newer release with the same command you used originally. The package metadata carries the
+Linux build number, so a rebuild of the same upstream version (`-linux.2`) upgrades the previous
+build (`-linux.1`); for the AppImage, replace the old file with the new one. There is no in-app
+updater in this first release.
 
 ## 6. Downgrade
 

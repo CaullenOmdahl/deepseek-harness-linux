@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - id: latest
         run: echo "version=$(npm view @deepseek-ai/dsh@latest version)" >> "$GITHUB_OUTPUT"
       - name: Validate the upstream tag exists
@@ -34,7 +36,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           LATEST: ${{ steps.latest.outputs.version }}
         run: |
-          gh release list --limit 100 --json tagName --jq '.[].tagName' > /tmp/releases.txt
+          gh release list --limit 200 --json tagName --jq '.[].tagName' > /tmp/releases.txt
           node linux/scripts/decide-sync.mjs --latest "$LATEST" --releases-file /tmp/releases.txt >> "$GITHUB_OUTPUT"
       - name: Check for an in-flight Linux build
         id: inflight
@@ -48,7 +50,7 @@ jobs:
           echo "busy=$busy" >> "$GITHUB_OUTPUT"
       - name: Dispatch the Linux build
         # A build for the same version may still be running: skip this tick rather
-        # than queue a duplicate that would fail at `gh release create`.
+        # than queue a duplicate that would fail when it tries to publish the tag.
         if: steps.decide.outputs.action == 'build' && steps.inflight.outputs.busy == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,12 +60,13 @@ jobs:
           # default branch is `github.ref_name` for scheduled runs.
           REF: ${{ github.event.repository.default_branch || github.ref_name }}
           VERSION: ${{ steps.decide.outputs.version }}
-        run: gh workflow run build-linux.yml --ref "$REF" -f version="$VERSION" -f build_number=1
-      - name: Open an issue
+        # The build workflow resolves the next unused build number, so a rebuild of
+        # the same upstream version never collides with an existing release.
+        run: gh workflow run build-linux.yml --ref "$REF" -f version="$VERSION"
+      - name: Open or update the sync failure issue
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: |
-          gh issue create --title "Upstream sync failed" \
-            --body "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash linux/scripts/issue-on-failure.sh "Upstream sync failed" "$RUN_URL"

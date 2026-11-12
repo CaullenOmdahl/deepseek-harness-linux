@@ -1,0 +1,27 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: DeepSeek Harness
+Upstream-Contact: https://github.com/deepseek-ai/deepseek-harness/issues
+Source: https://github.com/CaullenOmdahl/deepseek-harness-linux
+
+Files: *
+Copyright: 2026 DeepSeek
+License: MIT
+ DeepSeek Harness is Copyright (c) 2026 DeepSeek and is distributed under the
+ MIT License. The upstream copyright notice and license text are preserved
+ verbatim in the LICENSE file installed at
+ /opt/DeepSeek Harness/resources/LICENSE.
+ .
+ This package is an unofficial community build prepared by the DSH Linux
+ overlay, which applies a build-time patch series to the upstream source:
+ https://github.com/CaullenOmdahl/deepseek-harness-linux
+ .
+ It is not published, endorsed, or supported by DeepSeek. The Linux packaging
+ additions in this repository are MIT-licensed as well. See the NOTICE file
+ installed at /opt/DeepSeek Harness/resources/NOTICE for the complete list of
+ modifications.
+
+Files: debian/*
+Copyright: 2026 DSH Linux maintainers
+License: MIT
+ The Linux packaging additions are provided by their contributors under the
+ MIT License.

@@ -1,0 +1,53 @@
+DeepSeek Harness for Linux — NOTICE
+====================================
+
+DeepSeek Harness is Copyright (c) 2026 DeepSeek and is distributed under the MIT
+License. The upstream copyright notice and license text are preserved verbatim in
+LICENSE.
+
+Upstream project: https://github.com/deepseek-ai/deepseek-harness
+Upstream license: MIT
+
+This repository (https://github.com/CaullenOmdahl/deepseek-harness-linux) is an
+unofficial community overlay that packages the upstream Electron desktop
+application for Linux. It is not published, endorsed, or supported by DeepSeek.
+The Linux packaging additions in this repository are provided by their
+contributors under the MIT License as well.
+
+Modifications made by this overlay
+----------------------------------
+
+All upstream source files are used unmodified on disk. Upstream files are changed
+only at build time, by the patch series in linux/patches/ applied to a fresh
+checkout of the pinned upstream tag:
+
+- 0001-desktop-linux-target.patch — adds `linux-x64` as a build target to
+  upstream's desktop packaging scripts, wires the Linux unsigned/local packaging
+  path, and keeps upstream's macOS/Windows signing and upload behaviour unchanged.
+- 0002-brand-window-title.patch — adds the opt-in `DSH_LINUX_CLIENT_TITLE`
+  selector so the unsigned/local client profile can use the official client
+  window title instead of the local-build title.
+
+Additional files in this repository, not present upstream:
+
+- linux/electron-builder.config.mjs — Linux electron-builder wrapper that reuses
+  upstream's config factory and adds AppImage, deb, rpm, and pacman targets,
+  desktop metadata (`desktopName`, `syncDesktopName`, icon set), and the fpm
+  package dependencies.
+- linux/build/build.sh — prepares the upstream Linux tree and packages the four
+  release formats.
+- linux/assets/icons/ — application icons rendered from the upstream product
+  icon for standard hicolor sizes.
+- linux/lib/ and linux/scripts/ — release naming, SHA-256 checksums, the
+  linux-update.json manifest, signing/verification, patch application, upstream
+  sync decisions, and the container install tests.
+- .github/workflows/build-linux.yml and .github/workflows/sync-upstream.yml —
+  CI that builds, tests, signs, and publishes Linux releases and follows upstream
+  `latest`.
+- dsh-linux-pubkey.asc — the public key that verifies release metadata
+  signatures.
+- README.md, docs/, and this NOTICE.
+
+No trademark rights are granted. "DeepSeek", "DeepSeek Harness", and associated
+marks belong to their owners; they are used here only to describe the software
+being packaged.

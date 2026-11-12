@@ -112,7 +112,8 @@ ambient keyring when `GPG_PRIVATE_KEY` is unset; CI always sets it.
 1. Generate a new key in a temporary home, e.g.
    `GNUPGHOME=$(mktemp -d) gpg --batch --passphrase '' --quick-generate-key "DSH Linux <dsh-linux@invalid>" ed25519 sign 0`.
 2. Export the secret key and replace both repo secrets.
-3. Replace `dsh-linux-pubkey.asc`, then update the fingerprint in `README.md` and `docs/install.md`.
+3. Replace `dsh-linux-pubkey.asc`, then update the fingerprint in `README.md`, `docs/install.md`, and
+   this file (`docs/maintainers.md`).
 4. Publish a new build so the current release metadata is signed by the new key. Old releases stay
    verifiable only with the old public key; note that in the release/issue announcement if the key was
    revoked.
@@ -134,11 +135,12 @@ The applier prints which patch failed and why (`git apply --check` diagnostics).
    the failing patch's changes. For `0002`, for example:
 
    ```bash
-   git -C /tmp/dsh-upstream apply linux/patches/0001-*.patch
+   # `git apply` resolves the patch path after -C, so pass an absolute path.
+   git -C /tmp/dsh-upstream apply "$PWD/linux/patches/0001-"*.patch
    git -C /tmp/dsh-upstream add -A
    git -C /tmp/dsh-upstream -c user.name=maintainer -c user.email=m@invalid commit -m baseline
    # edit the upstream files that 0002 must change
-   git -C /tmp/dsh-upstream diff > linux/patches/0002-brand-window-title.patch
+   git -C /tmp/dsh-upstream diff > "$PWD/linux/patches/0002-brand-window-title.patch"
    ```
 
    For `0001`, start from a fresh checkout and diff the edited tree directly.
@@ -190,6 +192,8 @@ Verify a published release the way a user would:
 TAG=v0.2.2-rc.1-linux.1
 rm -rf /tmp/dsh-verify && mkdir -p /tmp/dsh-verify && cd /tmp/dsh-verify
 gh release download "$TAG" -R CaullenOmdahl/deepseek-harness-linux
+# The signing key is not a release asset; fetch it from the repository.
+curl -LO https://github.com/CaullenOmdahl/deepseek-harness-linux/raw/master/dsh-linux-pubkey.asc
 gpg --import dsh-linux-pubkey.asc
 sha256sum -c SHA256SUMS
 gpg --verify SHA256SUMS.asc SHA256SUMS

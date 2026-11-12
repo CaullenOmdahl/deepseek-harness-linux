@@ -31,9 +31,8 @@ A complete release contains exactly:
 ## 2. Verify
 
 ```bash
-# Import the project signing key once.
-# If it is not next to the downloaded files, take it from the repository:
-#   curl -LO https://raw.githubusercontent.com/CaullenOmdahl/deepseek-harness-linux/master/dsh-linux-pubkey.asc
+# Import the project signing key. It is not a release asset: download it from the repository.
+curl -LO https://github.com/CaullenOmdahl/deepseek-harness-linux/raw/master/dsh-linux-pubkey.asc
 gpg --import dsh-linux-pubkey.asc
 
 sha256sum -c SHA256SUMS
@@ -87,7 +86,7 @@ sudo pacman -U ./deepseek-harness-0.2.2-rc.1-1-x86_64.pkg.tar.zst
 
 The package declares Arch's native dependency names (alsa-lib, gtk3, nss, ffmpeg, and so on).
 
-### AppImage (any glibc x86_64 distribution)
+### AppImage (glibc 2.35+ x86_64)
 
 ```bash
 chmod +x deepseek-harness-0.2.2-rc.1-x86_64.AppImage
@@ -99,7 +98,8 @@ retry:
 
 | Distribution | Package |
 | --- | --- |
-| Debian / Ubuntu | `sudo apt install libfuse2` |
+| Debian 12 / Ubuntu 22.04 | `sudo apt install libfuse2` |
+| Debian 13+ / Ubuntu 24.04+ | `sudo apt install libfuse2t64` |
 | Fedora / RHEL | `sudo dnf install fuse-libs` |
 | openSUSE | `sudo zypper install fuse2` |
 | Arch | `sudo pacman -S fuse2` |

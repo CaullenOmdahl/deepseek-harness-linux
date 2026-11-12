@@ -20,7 +20,7 @@ containers before it is signed and published.
 | `deb` | Ubuntu 22.04+, Debian 12+, Mint/Pop!_OS based on them | `apt` |
 | `rpm` | Fedora 36+, RHEL 10+, openSUSE Tumbleweed | `dnf` / `zypper` |
 | `pacman` | Arch Linux, Manjaro | `pacman` |
-| `AppImage` | any glibc x86_64 distribution | run the file |
+| `AppImage` | glibc 2.35+ x86_64 | run the file |
 
 - **Architecture:** x86_64 only in v1. arm64 is a planned fast follow.
 - **glibc:** builds target glibc 2.35 (Ubuntu 22.04 class), which covers the distros above. RHEL 9 and
@@ -73,7 +73,8 @@ Per-distro detail, uninstall commands, and troubleshooting are in [`docs/install
 ### AppImage and FUSE
 
 The AppImage mounts itself through FUSE 2. If FUSE 2 is missing, either install it (`libfuse2` on
-Debian/Ubuntu, `fuse-libs` on Fedora) or run it with the extraction fallback:
+Debian/Ubuntu, or `libfuse2t64` on Ubuntu 24.04+/Debian 13+; `fuse-libs` on Fedora) or run it with the
+extraction fallback:
 
 ```bash
 ./deepseek-harness-0.2.2-rc.1-x86_64.AppImage --appimage-extract-and-run
@@ -97,7 +98,8 @@ D1C8 807B 90F7 A51E 7537  FD7F 4B69 2295 FFFB 9452
 Verify a downloaded release (run from the directory containing all assets):
 
 ```bash
-# 1. Import the release signing key (from this repo, or copy dsh-linux-pubkey.asc next to the assets).
+# 1. Import the release signing key. It is not a release asset: download it from this repository.
+curl -LO https://github.com/CaullenOmdahl/deepseek-harness-linux/raw/master/dsh-linux-pubkey.asc
 gpg --import dsh-linux-pubkey.asc
 
 # 2. Check that every artifact matches its SHA-256.

@@ -22,8 +22,10 @@
 // DSH_DESKTOP_TARGET_ARCH=x64, DSH_DESKTOP_UNSIGNED=1, DSH_DESKTOP_APP_ID set, and a
 // positive BUILD_NUMBER.
 
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createElectronBuilderConfig } from '../upstream/apps/desktop/scripts/electron-builder-config.mjs'
+import { fixPackagedSharp } from './scripts/rebuild-sharp-native.mjs'
 
 /** Standard hicolor icon sizes resolved from the upstream product icon (see assets/icons/). */
 const ICON_DIRECTORY = fileURLToPath(new URL('./assets/icons', import.meta.url))
@@ -42,6 +44,15 @@ const VENDOR = 'DSH Linux maintainers'
 
 /** Debian policy copyright file installed by fpm (the deb target does not create one). */
 const DEB_COPYRIGHT = fileURLToPath(new URL('./assets/deb-copyright', import.meta.url))
+
+/** libvips built by linux/scripts/build-libvips.sh; bundled so sharp's images decode. */
+const VIPS_PREFIX = process.env.DSH_VIPS_PREFIX?.trim() ?? ''
+if (VIPS_PREFIX === '') {
+  throw new Error('linux packaging: DSH_VIPS_PREFIX is required; run linux/build/build.sh')
+}
+
+/** Electron version the tree was prepared with; the addon rebuild needs the exact ABI. */
+const ELECTRON_VERSION = process.env.DSH_ELECTRON_VERSION?.trim() ?? ''
 
 /** Top-level LICENSE and NOTICE bundled inside every package's resources directory. */
 const LICENSE = fileURLToPath(new URL('../LICENSE', import.meta.url))
@@ -90,7 +101,20 @@ export default {
     ...(upstream.extraResources ?? []),
     { from: LICENSE, to: 'LICENSE' },
     { from: NOTICE, to: 'NOTICE' },
+    // Self-contained libvips: sharp's prebuilt addon cannot be used inside Electron (its
+    // statically linked glib corrupts GObject state), so the app carries this build.
+    { from: path.join(VIPS_PREFIX, 'lib'), to: 'libvips/lib', filter: ['libvips*.so*'] },
+    { from: path.join(VIPS_PREFIX, 'lib', 'bundle'), to: 'libvips/lib/bundle' },
   ],
+  // Rebuild sharp's addon against the packaged Electron version and the bundled libvips,
+  // then prove a decode works with the packaged binary. A crash here fails the build.
+  afterPack: async (context) => {
+    fixPackagedSharp({
+      appOutDir: context.appOutDir,
+      libvipsPrefix: VIPS_PREFIX,
+      electronVersion: ELECTRON_VERSION,
+    })
+  },
   linux: {
     ...upstream.linux,
     category: 'Development',

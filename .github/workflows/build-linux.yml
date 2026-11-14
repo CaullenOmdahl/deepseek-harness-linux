@@ -75,10 +75,15 @@ jobs:
 
       # rpm (rpmbuild), libarchive-tools (bsdtar, pacman target), xz/zstd are the fpm host
       # tools; xvfb/xdotool run the AppImage window-title smoke.
-      - name: Install packaging and smoke-test tools
+      - name: Install packaging, smoke-test and libvips build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y rpm libarchive-tools xz-utils zstd fakeroot xvfb xdotool
+          sudo apt-get install -y rpm libarchive-tools xz-utils zstd fakeroot xvfb xdotool x11-utils \
+            build-essential pkg-config patchelf libglib2.0-dev zlib1g-dev libjpeg-turbo8-dev \
+            libpng-dev libwebp-dev libexif-dev liblcms2-dev
+          # libvips needs a meson newer than 22.04's 0.61; pnpm/npm builds of sharp need node-gyp.
+          python3 -m pip install --user 'meson>=1.0' ninja
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Resolve the build number and release tag
         id: release

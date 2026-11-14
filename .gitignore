@@ -3,3 +3,4 @@ upstream/
 dist/
 .superpowers/
 node_modules/
+/.cache/

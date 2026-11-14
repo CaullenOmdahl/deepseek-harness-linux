@@ -111,6 +111,26 @@ shopt -u nullglob
   env "${linux_env[@]}" "${pnpm_command[@]}" exec tsx apps/desktop/scripts/package-target.ts linux-x64 --prepare-only
 )
 
+# The prepared tree ships sharp's prebuilt addon, whose bundled libvips statically links
+# glib: inside Electron that corrupts GObject state and the first image decode segfaults
+# the host. Build a glib-dynamic libvips to bundle with every artifact; the wrapper's
+# afterPack hook (linux/electron-builder.config.mjs) rebuilds sharp's addon against it and
+# verifies a decode with the packaged binary before any artifact is written.
+VIPS_VERSION=${VIPS_VERSION:-8.18.7}
+VIPS_PREFIX="$ROOT/.cache/linux-libvips-$VIPS_VERSION"
+if [[ ! -e "$VIPS_PREFIX/lib/pkgconfig/vips-cpp.pc" ]]; then
+  bash "$ROOT/linux/scripts/build-libvips.sh" "$VIPS_PREFIX" "$VIPS_VERSION"
+fi
+export DSH_VIPS_PREFIX="$VIPS_PREFIX"
+if [[ -z "${DSH_ELECTRON_VERSION:-}" ]]; then
+  DSH_ELECTRON_VERSION=$(node --input-type=module -e '
+    import { createRequire } from "node:module"
+    const require = createRequire(process.argv[1] + "/package.json")
+    process.stdout.write(require("electron/package.json").version)
+  ' "$DESKTOP")
+fi
+export DSH_ELECTRON_VERSION
+
 # 2. Package the prepared tree with all four formats and the Linux branding.
 (
   cd "$DESKTOP"

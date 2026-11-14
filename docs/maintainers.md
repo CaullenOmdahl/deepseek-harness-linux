@@ -312,6 +312,33 @@ With a release already present for the current `latest` version, the run must lo
 flight) and the build resolves the next build number. Scheduled workflows are disabled after 60 days
 without repository activity, so a long silence needs a manual re-enable.
 
+## Native image support (sharp/libvips)
+
+Upstream ships sharp's npm prebuilt addon for Linux, and its bundled libvips statically links
+glib/GObject. Inside the packaged Electron runtime that static glib collides with the system glib
+Electron loads, so the first image decode corrupts GObject state and **segfaults the desktop host** —
+any attached image (screenshots, design assets) crashes DSH. Rebuilding sharp's addon alone does not
+fix it; the addon must link a libvips whose glib is dynamic.
+
+The build therefore:
+
+1. Builds a pinned, glib-dynamic libvips with only the codecs image attachments need
+   (PNG/JPEG/WebP, EXIF, lcms2) via [`linux/scripts/build-libvips.sh`](../linux/scripts/build-libvips.sh),
+   bundling its non-glib runtime dependencies beside it. Override the version with
+   `VIPS_VERSION` (default `8.18.7`, sharp 0.35's required minimum).
+2. Bundles that tree into every artifact as `resources/libvips/` (extraResources in
+   [`linux/electron-builder.config.mjs`](../linux/electron-builder.config.mjs)).
+3. In the config's `afterPack` hook, rebuilds sharp's addon for the exact packaged Electron version
+   against the bundled libvips, sets its rpath to `resources/libvips/lib`, installs it over the
+   prebuilt addon, and then **decodes a generated PNG with the packaged binary**. A segfault or
+   missing library fails the build instead of shipping a crash-on-image artifact.
+
+The hook runs in `linux/scripts/rebuild-sharp-native.mjs`; its helpers are covered by
+`tests/linux/rebuild-sharp-native.test.mjs`. CI installs the libvips build tools (meson, ninja,
+patchelf, glib/jpeg/png/webp/exif/lcms2 development packages) in `build-linux.yml`. When upstream
+raises sharp's required libvips, bump the default `VIPS_VERSION`; the sharp version itself is read
+from the addon filename in the prepared tree, so no sharp pin lives here.
+
 ## Known residuals
 
 - **In-app sidebar brand:** the packaged app still shows **DSH Local Build** in the sidebar footer

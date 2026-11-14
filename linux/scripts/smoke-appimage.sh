@@ -20,6 +20,10 @@ if [[ "${DSH_SMOKE_INSIDE:-}" != "1" ]]; then
     echo "error: AppImage not found: $1" >&2
     exit 1
   fi
+  if ! command -v xprop >/dev/null 2>&1; then
+    echo "error: xprop is required to read WM_CLASS (install x11-utils)" >&2
+    exit 1
+  fi
   appimage=$(realpath "$1")
   exec xvfb-run -a --server-args="-screen 0 1400x1000x24" \
     env DSH_SMOKE_INSIDE=1 DSH_SMOKE_APPIMAGE="$appimage" bash "${BASH_SOURCE[0]}"
@@ -80,10 +84,28 @@ if [[ -z "$window_id" || "$title" != "DeepSeek Harness" ]]; then
   exit 1
 fi
 
-wm_class=$(xprop -id "$window_id" WM_CLASS 2>/dev/null || true)
+for _ in $(seq 1 20); do
+  wm_class=$(xprop -id "$window_id" WM_CLASS 2>/dev/null || true)
+  [[ -n "$wm_class" ]] && break
+  sleep 1
+done
 net_name=$(xprop -id "$window_id" _NET_WM_NAME 2>/dev/null || true)
+if [[ -z "$wm_class" ]]; then
+  echo "error: could not read WM_CLASS from window $window_id" >&2
+  echo "--- visible windows ---" >&2
+  xdotool search --onlyvisible --name '.*' 2>/dev/null | while read -r id; do
+    printf 'id=%s name=%q class=%q\n' "$id" \
+      "$(xdotool getwindowname "$id" 2>/dev/null || true)" \
+      "$(xprop -id "$id" WM_CLASS 2>/dev/null || true)" >&2
+  done
+  echo "--- app log ---" >&2
+  tail -n 60 "$log" >&2 || true
+  exit 1
+fi
 if [[ "$wm_class" != *'"deepseek-harness"'* ]]; then
   echo "error: WM_CLASS does not contain deepseek-harness: $wm_class" >&2
+  echo "--- app log ---" >&2
+  tail -n 60 "$log" >&2 || true
   exit 1
 fi
 if [[ "$net_name" != *'"DeepSeek Harness"'* ]]; then

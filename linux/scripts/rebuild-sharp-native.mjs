@@ -82,7 +82,10 @@ export function buildSharpAddon({ sharpVersion, electronVersion, libvipsPrefix }
     run('npm', ['install', `sharp@${sharpVersion}`, '--no-audit', '--no-fund'], work)
     run('npm', ['install', '--save-dev', 'node-gyp', 'node-addon-api', '--no-audit', '--no-fund'], work)
     const sharpDir = path.join(work, 'node_modules', 'sharp')
+    // sharp's build spawns bare `node-gyp`; expose the copy npm installed here.
+    const localBin = path.join(work, 'node_modules', '.bin')
     run(process.execPath, ['install/build.js'], sharpDir, {
+      PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ''}`,
       SHARP_FORCE_GLOBAL_LIBVIPS: '1',
       PKG_CONFIG_PATH: pkgConfig,
       npm_config_runtime: 'electron',
